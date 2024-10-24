@@ -1,0 +1,62 @@
+{
+  "name": "worker-starter",
+  "module": "src/index.ts",
+  "type": "module",
+  "packageManager": "bun@1.1.24",
+  "scripts": {
+    "lint": "eslint \"{src,test,scripts}/**/*.{ts,mjs}\"",
+    "lint-fix": "pnpm lint --fix",
+    "test": "vitest",
+    "typecheck": "tsc -p tsconfig.src.json --noEmit",
+    "madge": "madge --ts-config ./tsconfig.src.json --circular --no-color --no-spinner --extensions ts,tsx src",
+    "deploy": "wrangler deploy --name=$(jq -r .name package.json)",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "cf-typegen": "wrangler types"
+  },
+  "browserslist": {
+    "production": [
+      "defaults",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "dependencies": {
+    "@effect/experimental": "^0.27.3",
+    "@effect/platform": "^0.66.2",
+    "@effect/schema": "^0.74.1",
+    "@effect/sql": "^0.14.0",
+    "@effect/sql-d1": "^0.11.0",
+    "effect": "^3.8.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.12",
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "@effect/eslint-plugin": "^0.2.0",
+    "@effect/language-service": "^0.1.0",
+    "@eslint/compat": "1.1.1",
+    "@eslint/eslintrc": "3.1.0",
+    "@eslint/js": "9.11.1",
+    "@eslint/json": "0.5.0",
+    "@eslint/markdown": "6.1.1",
+    "@types/node": "^22.7.4",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^9.11.1",
+    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-plugin-deprecation": "^3.0.0",
+    "eslint-plugin-import": "^2.30.0",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-sort-destructure-keys": "^2.0.0",
+    "lefthook": "^1.7.18",
+    "madge": "^8.0.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1",
+    "wrangler": "^3.78.12"
+  }
+}

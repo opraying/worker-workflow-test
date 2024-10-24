@@ -1,0 +1,78 @@
+name: 🚀 Release
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ dev ]
+
+permissions:
+  contents: read
+  deployments: write
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 💾 Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-${{ matrix.bun }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.bun }}-bun-
+
+      - name: 🥟 Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: 📦 Install dependencies
+        run: bun install
+
+      - name: 🧹 Lint code
+        run: bun run lint
+
+      - name: 🕸️ Check dependencies
+        run: bun run madge
+
+      - name: 🔍 Type check
+        run: bun run typecheck
+
+      - name: 🏷️ Set project name
+        run: echo "PROJECT_NAME=$(jq -r .name package.json)" >> $GITHUB_ENV
+
+      - name: 🚀 Deploy to Cloudflare
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy --name=${{ env.PROJECT_NAME }}
+
+      - name: 📢 Send deployment status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const status = '${{ steps.deploy.outcome }}' === 'success' ? 'success' : 'failure';
+            await fetch("${{ secrets.DISCORD_DEPLOY_WEBHOOK }}", {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ 
+                content: status === 'failure' ? '❌ ${{ env.PROJECT_NAME }} deployment failed' : '🚀 ${{ env.PROJECT_NAME }} has been released. ${{ env.DEPLOYMENT_URL }}'
+              })
+            });

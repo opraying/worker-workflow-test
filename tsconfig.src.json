@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "./",
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "Preserve",
+    "tsBuildInfoFile": "./tsconfig.src.tsbuildinfo",
+    "types": ["@cloudflare/workers-types/experimental"]
+  },
+  "include": ["worker-configuration.d.ts", "src/**/*"],
+  "exclude": ["test/**/*"]
+}

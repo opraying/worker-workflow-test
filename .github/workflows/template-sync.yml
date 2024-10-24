@@ -1,0 +1,44 @@
+name: 🔄 Template Sync
+
+on:
+  schedule:
+  - cron: "0 0 1 * *" # 🕛 Run monthly on the 1st at 00:00 UTC
+  # manual trigger
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repo-sync:
+    name: 🔁 Sync Repository
+    runs-on: ubuntu-latest
+    # https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      # To use this repository's private action, you must check out the repository
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_SYNC_TOKEN }}
+      - name: 🔄 Sync Template
+        uses: xesrevinu/actions-template-sync@v3.1.3
+        with:
+          sync_token: ${{ secrets.REPO_SYNC_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          source_repo_path: opraying/worker-starter
+          is_pr_cleanup: true
+          upstream_branch: main
+          pr_labels: 🔁 template-sync
+      - name: 📊 Report Sync Status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Template sync completed successfully!"
+          else
+            echo "❌ Template sync failed. Please check the logs for details."
+          fi

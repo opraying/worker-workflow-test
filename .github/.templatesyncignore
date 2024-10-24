@@ -1,0 +1,14 @@
+.all-contributorsrc
+.github/dependabot.yml
+README.md
+SECURITY.md
+
+flake.nix
+flake.lock
+package.json
+wrangler.toml
+bun.lockb
+
+src/
+test/
+worker-configuration.d.ts
