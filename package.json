@@ -1,5 +1,5 @@
 {
-  "name": "worker-starter",
+  "name": "worker-workflow-test",
   "module": "src/index.ts",
   "type": "module",
   "packageManager": "bun@1.1.24",
