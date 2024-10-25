@@ -1,32 +1,25 @@
 import * as HttpApiBuilder from "@effect/platform/HttpApiBuilder"
-import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
+import * as Random from "effect/Random"
 import { MyHttpApi } from "./api"
-import { AccessTokenString, Account, AccountId, UserId, UserWithSensitive } from "./model"
+import { Workflows } from "./workflows"
 
 export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
   Effect.gen(function*() {
-    yield* Effect.log("Hello")
+    const workflows = yield* Workflows
+    const myWorkflow = workflows.getWorkflow("myWorkflow")
 
     return handles.pipe(
       HttpApiBuilder.handle("index", () =>
         Effect.gen(function*() {
-          const createdAt = yield* DateTime.now
-          const updatedAt = yield* DateTime.now
-
-          return UserWithSensitive.make({
-            id: UserId.make(1),
-            accessToken: Redacted.make(AccessTokenString.make("123")),
-            account: Account.make({
-              id: AccountId.make(1),
-              createdAt,
-              updatedAt
-            }),
-            accountId: AccountId.make(1),
-            createdAt,
-            updatedAt
+          const id = yield* Random.nextIntBetween(1000, 9999).pipe(Effect.map(String))
+          const workflow = yield* myWorkflow.create({ id })
+          const workflowState = yield* Effect.all({
+            id: workflow.id,
+            status: workflow.status
           })
+
+          return { id: workflowState.id, status: workflowState.status }
         })),
       HttpApiBuilder.handle("health", () => Effect.succeed("ok"))
     )
