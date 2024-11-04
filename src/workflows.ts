@@ -1,5 +1,7 @@
 import type * as Cloudflare from "@cloudflare/workers-types/experimental"
+import * as Schema from "@effect/schema/Schema"
 import type * as CloudflareWorkers from "cloudflare:workers"
+import { WorkerEntrypoint } from "cloudflare:workers"
 import * as Context from "effect/Context"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
@@ -29,42 +31,70 @@ const makeInstance = (instance: Cloudflare.WorkflowInstance): WorkflowInstance =
   }
 }
 
-interface CloudflareWorkflow {
-  readonly get: (id: string) => Promise<any>
-  readonly create: (options?: Cloudflare.WorkflowInstanceCreateOptions) => Promise<any>
+interface WorkflowInstanceCreateOptions<T = unknown> {
+  /**
+   * An id for your Workflow instance. Must be unique within the Workflow.
+   */
+  id?: string
+  /**
+   * The event payload the Workflow instance is triggered with
+   */
+  params?: T
 }
 
-const make = <T extends Record<string, CloudflareWorkflow>>(record: T) => {
-  const get = <K extends T>(key: keyof K, id: string) =>
-    Effect.promise(() => record[key as any].get(id)).pipe(
-      Effect.map(makeInstance)
-    )
+interface CloudflareWorkflow {
+  readonly get: (id: string) => Promise<any>
+  readonly create: (options?: WorkflowInstanceCreateOptions) => Promise<any>
+}
 
-  const create = <K extends T>(key: keyof K, options?: Cloudflare.WorkflowInstanceCreateOptions) =>
-    Effect.promise(() => record[key as any].create(options)).pipe(
+const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<keyof T, WorkflowClass<any, any, any>>>(
+  env: T,
+  record: R
+) => {
+  const getClass = (workflowTag: keyof T) => record[workflowTag]
+
+  const getBinding = (ins: ReturnType<typeof getClass>) => env[ins._binding]
+
+  const get = (workflowTag: keyof T, id: string) => {
+    const i = getClass(workflowTag)
+
+    return Effect.promise(() => getBinding(i).get(id)).pipe(Effect.map(makeInstance))
+  }
+
+  const create = <A = unknown>(workflowTag: keyof T, options?: WorkflowInstanceCreateOptions<A>) => {
+    const i = getClass(workflowTag)
+
+    const encode = Schema.encodeUnknown(i._schema)
+
+    return pipe(
+      options?.params ? encode(options.params) : Effect.succeed(undefined),
+      Effect.flatMap((options) => Effect.promise(() => getBinding(i).create(options))),
       Effect.map(makeInstance)
     )
+  }
 
   return {
     get,
     create,
-    getWorkflow: <K extends T>(key: keyof K) => ({
-      get: (id: string) => get(key, id),
-      create: (options?: Cloudflare.WorkflowInstanceCreateOptions) => create(key, options)
+    getWorkflow: <R extends Record<string, WorkflowClass<any, any, any>>>(workflowTag: keyof R) => ({
+      get: (id: string) => get(workflowTag as any, id),
+      create: (options?: WorkflowInstanceCreateOptions<R[typeof workflowTag]["_i"]>) =>
+        create(workflowTag as any, options)
     })
   }
 }
 
-export class Workflows extends Context.Tag("Workflows")<Workflows, ReturnType<typeof make>>() {
-  static fromRecord = <T extends Record<string, CloudflareWorkflow>>(record: LazyArg<T>) =>
-    Layer.sync(this, () => make(record()))
+export class Workflows extends Effect.Tag("Workflows")<Workflows, ReturnType<typeof make>>() {
+  static fromRecord = <T extends Record<string, WorkflowClass<any, any, any>>>(record: LazyArg<T>) =>
+    Layer.sync(this, () => make((globalThis as any).env, record()))
 }
 
 const zone = DateTime.zoneUnsafeMakeNamed("UTC")
 
-export class WorkflowEvent
-  extends Context.Tag("WorkflowEvent")<WorkflowEvent, CloudflareWorkers.WorkflowEvent<unknown>>()
-{
+export class WorkflowEvent extends Context.Tag("WorkflowEvent")<
+  WorkflowEvent,
+  CloudflareWorkers.WorkflowEvent<unknown>
+>() {
   static params = <T>(_: T) => this as Context.Tag<WorkflowEvent, CloudflareWorkers.WorkflowEvent<T>>
 }
 
@@ -79,32 +109,56 @@ export interface Workflow {
 }
 export const Workflow = Context.GenericTag<Workflow>("Workflow")
 
-export const EffectWorkflowRun = (
-  effect: Effect.Effect<unknown, never, Workflow | WorkflowEvent>
+export interface WorkflowClass<T, A, I> extends WorkerEntrypoint<never> {
+  readonly _tag: T
+  readonly _i: I
+  readonly _a: A
+  readonly _schema: Schema.Schema<A, I>
+  readonly _binding: string
+  readonly run: (...args: any) => Promise<void>
+}
+
+export const makeWorkflow = <const Tag, A, I>(
+  { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
+  run: (event: A) => Effect.Effect<unknown, never, Workflow | WorkflowEvent>
 ) => {
+  const ret = class extends WorkerEntrypoint<never> {
+    static _tag = name as Tag
+
+    static binding = binding
+
+    static schema = schema
+
+    run(...args: any) {
+      return EffectWorkflowRun(schema, run).run.apply(null, args)
+    }
+  }
+
+  return ret as unknown as WorkflowClass<Tag, A, I>
+}
+
+export const EffectWorkflowRun = <A, I>(
+  schema: Schema.Schema<A, I>,
+  effect: (event: A) => Effect.Effect<unknown, never, Workflow | WorkflowEvent>
+) => {
+  const decode = Schema.decodeUnknown(schema)
+
   return {
-    run: (
-      event: CloudflareWorkers.WorkflowEvent<unknown>,
-      step: CloudflareWorkers.WorkflowStep
-    ): Promise<unknown> =>
+    run: (event: CloudflareWorkers.WorkflowEvent<I>, step: CloudflareWorkers.WorkflowStep): Promise<unknown> =>
       Effect.runPromise(
         pipe(
-          effect,
-          Effect.provide(
-            Layer.succeed(WorkflowEvent, event)
-          ),
+          decode(event.payload),
+          Effect.flatMap((_) => effect(_)),
+          Effect.provide(Layer.succeed(WorkflowEvent, event)),
           Effect.provide(
             Layer.sync(Workflow, () => ({
               do: (name, callback, options) => {
+                // TODO: improve callback execution
                 const fn = Effect.runtime<never>().pipe(
                   Effect.bindTo("runtime"),
                   Effect.andThen(({ runtime }) =>
                     Effect.promise((signal) =>
-                      step.do(
-                        name,
-                        options ?? {},
-                        () => Runtime.runPromise(runtime)(callback, { signal }) as any
-                      )
+                      step.do(name, options ?? {}, () => Runtime.runPromise(runtime)(callback, { signal }) as any)
                     )
                   )
                 )

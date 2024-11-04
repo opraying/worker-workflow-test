@@ -4,7 +4,7 @@ import * as HttpApiBuilder from "@effect/platform/HttpApiBuilder"
 import * as HttpMiddleware from "@effect/platform/HttpMiddleware"
 import * as HttpPlatform from "@effect/platform/HttpPlatform"
 import * as Path from "@effect/platform/Path"
-import { WorkflowEntrypoint } from "cloudflare:workers"
+import * as Schema from "@effect/schema/Schema"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
 import { pipe } from "effect/Function"
@@ -14,22 +14,18 @@ import * as LogLevel from "effect/LogLevel"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { MyHttpApi } from "./api"
 import { HttpAppLive } from "./handle"
-import { EffectWorkflowRun, Workflow, WorkflowEvent, Workflows } from "./workflows"
+import { makeWorkflow, Workflow, Workflows } from "./workflows"
 
 declare global {
   // eslint-disable-next-line no-var
   var env: Env
 
-  type WorkflowsBinding = {
-    myWorkflow: Env["MY_WORKFLOW"]
-  }
+  type WorkflowsBinding = typeof workflows
 }
 
 const HttpLive = Layer.mergeAll(HttpAppLive).pipe(
   Layer.provide(
-    Workflows.fromRecord<WorkflowsBinding>(() => ({
-      myWorkflow: globalThis.env.MY_WORKFLOW
-    }))
+    Workflows.fromRecord(() => workflows)
   )
 )
 
@@ -48,48 +44,40 @@ const Live = pipe(
 
 const runtime = ManagedRuntime.make(Live)
 
-const workflow1 = EffectWorkflowRun(
-  Effect.gen(function*() {
-    const workflow = yield* Workflow
-    const event = yield* WorkflowEvent
+export const MyWorkflow = makeWorkflow(
+  { name: "MyWorkflow", binding: "MY_WORKFLOW", schema: Schema.Any },
+  (args) =>
+    Effect.gen(function*() {
+      const workflow = yield* Workflow
 
-    yield* Effect.log("event", event)
+      yield* Effect.log("args", args)
 
-    const step1Result = yield* workflow.do(
-      "step1",
-      pipe(
-        Effect.log("step1"),
-        Effect.andThen(Effect.sleep("1 second")),
-        Effect.andThen(Effect.succeed(10))
+      const step1Result = yield* workflow.do(
+        "step1",
+        pipe(
+          Effect.log("step1"),
+          Effect.andThen(Effect.sleep("1 second")),
+          Effect.andThen(Effect.succeed(10))
+        )
       )
-    )
-    yield* Effect.log("step1-result", step1Result)
+      yield* Effect.log("step1-result", step1Result)
 
-    yield* workflow.sleep("sleep 1", "1 minute")
+      yield* workflow.sleep("sleep 1", "1 minute")
 
-    yield* workflow.do("step2", Effect.log("step2"))
-    yield* Effect.log("step2-done")
+      yield* workflow.do("step2", Effect.log("step2"))
+      yield* Effect.log("step2-done")
 
-    const now = yield* DateTime.now
-    const until = DateTime.add(now, { minutes: 1 })
-    yield* workflow.sleepUntil("sleep until", until)
+      const now = yield* DateTime.now
+      const until = DateTime.add(now, { minutes: 1 })
+      yield* workflow.sleepUntil("sleep until", until)
 
-    yield* workflow.do("step3", Effect.log("step3"))
-    yield* Effect.log("step3-done")
-  }).pipe(
-    Effect.provide(
-      Layer.mergeAll(Layer.empty).pipe(
-        Layer.provide(Logger.pretty)
-      )
-    ),
-    Logger.withMinimumLogLevel(LogLevel.All)
-  )
+      yield* workflow.do("step3", Effect.log("step3"))
+      yield* Effect.log("step3-done")
+    })
 )
 
-export class MyWorkflow extends WorkflowEntrypoint {
-  run(...args: any) {
-    return workflow1.run.apply(this, args)
-  }
+const workflows = {
+  MyWorkflow
 }
 
 export default {
