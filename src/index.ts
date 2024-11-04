@@ -4,14 +4,13 @@ import * as HttpApiBuilder from "@effect/platform/HttpApiBuilder"
 import * as HttpMiddleware from "@effect/platform/HttpMiddleware"
 import * as HttpPlatform from "@effect/platform/HttpPlatform"
 import * as Path from "@effect/platform/Path"
-import * as Schema from "@effect/schema/Schema"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
 import { pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as LogLevel from "effect/LogLevel"
-import * as ManagedRuntime from "effect/ManagedRuntime"
+import * as Schema from "effect/Schema"
 import { MyHttpApi } from "./api"
 import { HttpAppLive } from "./handle"
 import { makeWorkflow, Workflow, Workflows } from "./workflows"
@@ -39,10 +38,8 @@ const Live = pipe(
   Layer.provideMerge(Path.layer),
   Layer.provideMerge(FileSystem.layerNoop({})),
   Layer.provide(Logger.minimumLogLevel(LogLevel.All)),
-  Layer.provide(Logger.pretty)
+  Layer.provide(Logger.structured)
 )
-
-const runtime = ManagedRuntime.make(Live)
 
 export const MyWorkflow = makeWorkflow(
   { name: "MyWorkflow", binding: "MY_WORKFLOW", schema: Schema.Any },
@@ -86,8 +83,8 @@ export default {
       env
     })
 
-    const handler = HttpApiBuilder.toWebHandler(runtime, HttpMiddleware.logger)
+    const handler = HttpApiBuilder.toWebHandler(Live, { middleware: HttpMiddleware.logger })
 
-    return handler(request as unknown as Request)
+    return handler.handler(request)
   }
 } satisfies ExportedHandler<Env>

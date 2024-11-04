@@ -1,5 +1,4 @@
 import type * as Cloudflare from "@cloudflare/workers-types/experimental"
-import * as Schema from "@effect/schema/Schema"
 import type * as CloudflareWorkers from "cloudflare:workers"
 import { WorkerEntrypoint } from "cloudflare:workers"
 import * as Context from "effect/Context"
@@ -10,6 +9,7 @@ import type { LazyArg } from "effect/Function"
 import { pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Runtime from "effect/Runtime"
+import * as Schema from "effect/Schema"
 
 type WorkflowInstance = {
   readonly id: Effect.Effect<string>

@@ -9,8 +9,9 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
     const workflows = yield* Workflows
     const myWorkflow = workflows.getWorkflow<WorkflowsBinding>("MyWorkflow")
 
-    return handles.pipe(
-      HttpApiBuilder.handle("index", () =>
+    return handles.handle(
+      "index",
+      () =>
         Effect.gen(function*() {
           const id = yield* Random.nextIntBetween(1000, 9999).pipe(Effect.map(String))
           const workflow = yield* myWorkflow.create({ id }).pipe(Effect.orDie)
@@ -21,7 +22,9 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
           })
 
           return { id: workflowState.id, status: workflowState.status }
-        })),
-      HttpApiBuilder.handle("health", () => Effect.succeed("ok"))
+        })
+    ).handle(
+      "health",
+      () => Effect.succeed("ok")
     )
   }))
