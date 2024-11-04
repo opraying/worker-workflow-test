@@ -35,11 +35,11 @@ interface WorkflowInstanceCreateOptions<T = unknown> {
   /**
    * An id for your Workflow instance. Must be unique within the Workflow.
    */
-  id?: string
+  id?: string | undefined
   /**
    * The event payload the Workflow instance is triggered with
    */
-  params?: T
+  params?: T | undefined
 }
 
 interface CloudflareWorkflow {
@@ -68,7 +68,14 @@ const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<key
 
     return pipe(
       options?.params ? encode(options.params) : Effect.succeed(undefined),
-      Effect.flatMap((options) => Effect.promise(() => getBinding(i).create(options))),
+      Effect.flatMap((params) =>
+        Effect.promise(() =>
+          getBinding(i).create({
+            id: options?.id,
+            params
+          })
+        )
+      ),
       Effect.map(makeInstance)
     )
   }
@@ -125,12 +132,12 @@ export const makeWorkflow = <const Tag, A, I>(
   const ret = class extends WorkerEntrypoint<never> {
     static _tag = name as Tag
 
-    static binding = binding
+    static _binding = binding
 
-    static schema = schema
+    static _schema = schema
 
     run(...args: any) {
-      return EffectWorkflowRun(schema, run).run.apply(null, args)
+      return EffectWorkflowRun(schema, run).apply(null, args)
     }
   }
 
@@ -143,37 +150,35 @@ export const EffectWorkflowRun = <A, I>(
 ) => {
   const decode = Schema.decodeUnknown(schema)
 
-  return {
-    run: (event: CloudflareWorkers.WorkflowEvent<I>, step: CloudflareWorkers.WorkflowStep): Promise<unknown> =>
-      Effect.runPromise(
-        pipe(
-          decode(event.payload),
-          Effect.flatMap((_) => effect(_)),
-          Effect.provide(Layer.succeed(WorkflowEvent, event)),
-          Effect.provide(
-            Layer.sync(Workflow, () => ({
-              do: (name, callback, options) => {
-                // TODO: improve callback execution
-                const fn = Effect.runtime<never>().pipe(
-                  Effect.bindTo("runtime"),
-                  Effect.andThen(({ runtime }) =>
-                    Effect.promise((signal) =>
-                      step.do(name, options ?? {}, () => Runtime.runPromise(runtime)(callback, { signal }) as any)
-                    )
+  return (event: CloudflareWorkers.WorkflowEvent<I>, step: CloudflareWorkers.WorkflowStep): Promise<unknown> =>
+    Effect.runPromise(
+      pipe(
+        decode(event.payload),
+        Effect.flatMap((_) => effect(_)),
+        Effect.provide(Layer.succeed(WorkflowEvent, event)),
+        Effect.provide(
+          Layer.sync(Workflow, () => ({
+            do: (name, callback, options) => {
+              // TODO: improve callback execution
+              const fn = Effect.runtime<never>().pipe(
+                Effect.bindTo("runtime"),
+                Effect.andThen(({ runtime }) =>
+                  Effect.promise((signal) =>
+                    step.do(name, options ?? {}, () => Runtime.runPromise(runtime)(callback, { signal }) as any)
                   )
                 )
+              )
 
-                return fn as any
-              },
+              return fn as any
+            },
 
-              sleep: (name, duration) => Effect.promise(() => step.sleep(name, Duration.toSeconds(duration))),
+            sleep: (name, duration) => Effect.promise(() => step.sleep(name, Duration.toSeconds(duration))),
 
-              sleepUntil: (name, timestamp) =>
-                Effect.promise(() => step.sleepUntil(name, DateTime.toEpochMillis(timestamp)))
-            }))
-          ),
-          DateTime.withCurrentZone(zone)
-        )
+            sleepUntil: (name, timestamp) =>
+              Effect.promise(() => step.sleepUntil(name, DateTime.toEpochMillis(timestamp)))
+          }))
+        ),
+        DateTime.withCurrentZone(zone)
       )
-  }
+    )
 }
