@@ -77,13 +77,13 @@ const workflows = {
   MyWorkflow
 }
 
+const handler = HttpApiBuilder.toWebHandler(Live, { middleware: HttpMiddleware.logger })
+
 export default {
   fetch(request, env) {
     Object.assign(globalThis, {
       env
     })
-
-    const handler = HttpApiBuilder.toWebHandler(Live, { middleware: HttpMiddleware.logger })
 
     return handler.handler(request)
   }

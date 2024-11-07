@@ -32,13 +32,7 @@ const makeInstance = (instance: Cloudflare.WorkflowInstance): WorkflowInstance =
 }
 
 interface WorkflowInstanceCreateOptions<T = unknown> {
-  /**
-   * An id for your Workflow instance. Must be unique within the Workflow.
-   */
   id?: string | undefined
-  /**
-   * The event payload the Workflow instance is triggered with
-   */
   params?: T | undefined
 }
 
@@ -48,12 +42,12 @@ interface CloudflareWorkflow {
 }
 
 const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<keyof T, WorkflowClass<any, any, any>>>(
-  env: T,
+  getEnv: LazyArg<T>,
   record: R
 ) => {
   const getClass = (workflowTag: keyof T) => record[workflowTag]
 
-  const getBinding = (ins: ReturnType<typeof getClass>) => env[ins._binding]
+  const getBinding = (ins: ReturnType<typeof getClass>) => getEnv()[ins._binding]
 
   const get = (workflowTag: keyof T, id: string) => {
     const i = getClass(workflowTag)
@@ -93,7 +87,7 @@ const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<key
 
 export class Workflows extends Effect.Tag("Workflows")<Workflows, ReturnType<typeof make>>() {
   static fromRecord = <T extends Record<string, WorkflowClass<any, any, any>>>(record: LazyArg<T>) =>
-    Layer.sync(this, () => make((globalThis as any).env, record()))
+    Layer.sync(this, () => make(() => (globalThis as any).env, record()))
 }
 
 const zone = DateTime.zoneUnsafeMakeNamed("UTC")
@@ -127,7 +121,7 @@ export interface WorkflowClass<T, A, I> extends WorkerEntrypoint<never> {
 
 export const makeWorkflow = <const Tag, A, I>(
   { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
-  run: (event: A) => Effect.Effect<unknown, never, Workflow | WorkflowEvent>
+  run: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>
 ) => {
   const ret = class extends WorkerEntrypoint<never> {
     static _tag = name as Tag
@@ -146,7 +140,7 @@ export const makeWorkflow = <const Tag, A, I>(
 
 export const EffectWorkflowRun = <A, I>(
   schema: Schema.Schema<A, I>,
-  effect: (event: A) => Effect.Effect<unknown, never, Workflow | WorkflowEvent>
+  effect: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>
 ) => {
   const decode = Schema.decodeUnknown(schema)
 
