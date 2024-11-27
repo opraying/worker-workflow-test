@@ -14,7 +14,12 @@ const TestWorkflow = Layer.succeed(
   Workflow,
   Workflow.of({
     do: (name, effect, _options) => effect as any,
-    fn: (name, effect, _options) => (...args) => effect(...args) as any,
+    /**
+     * NOTE: This has been omitted here, and serialization and deserialization of parameters and results should also be implemented.
+     */
+    fn: (schemaClass, effect, _options) => (...args) => {
+      return effect(...args) as any
+    },
     sleep: (name, duration) => TestClock.sleep(duration),
     sleepUntil: (name, timestamp) => {
       const diff = DateTime.now.pipe(
