@@ -14,7 +14,16 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
       () =>
         Effect.gen(function*() {
           const id = yield* Random.nextIntBetween(1000, 9999).pipe(Effect.map(String))
-          const workflow = yield* myWorkflow.create({ id }).pipe(Effect.orDie)
+
+          /**
+           * Create a workflow with payload, params is typed to the workflow schema and will be encoded to the event
+           */
+          const workflow = yield* myWorkflow.create({
+            params: {
+              id,
+              name: "Test"
+            }
+          }).pipe(Effect.orDie)
 
           const workflowState = yield* Effect.all({
             id: workflow.id,
@@ -23,8 +32,5 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
 
           return { id: workflowState.id, status: workflowState.status }
         })
-    ).handle(
-      "health",
-      () => Effect.succeed("ok")
     )
   }))

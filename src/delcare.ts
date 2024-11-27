@@ -5,7 +5,6 @@ import * as Schema from "effect/Schema"
 
 export class AppApi extends HttpApiGroup.make("app")
   .add(HttpApiEndpoint.get("index", "/").addSuccess(Schema.Any))
-  .add(HttpApiEndpoint.get("health", "/health").addSuccess(Schema.String))
   .annotate(OpenApi.Title, "App Api")
   .annotate(OpenApi.Description, "App Api")
 {}
