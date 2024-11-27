@@ -48,7 +48,7 @@ const Live = pipe(
 
 class WorkflowEventError extends Data.TaggedError("WorkflowEventError")<{ message?: string; cause?: unknown }> {}
 
-class Step2Request extends Schema.TaggedRequest<Step2Request>()("ProcessEvent", {
+class Step2Request extends Schema.TaggedRequest<Step2Request>()("Step2Request", {
   failure: Schema.Never,
   success: Schema.Option(Schema.String),
   payload: {
@@ -60,6 +60,9 @@ const step2 = Workflow.fn(Step2Request, ({ event: { id, name } }) =>
   Effect.gen(function*() {
     yield* Effect.log(`id: ${id}`, `name: ${name}`)
 
+    /**
+     * In `do`, if the return value is not serialized, types like Option cannot work normally and will be handled by Schema here.
+     */
     return Option.map(name, (name) => `hi ${name}`)
   }))
 
