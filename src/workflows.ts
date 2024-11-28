@@ -1,6 +1,7 @@
 import type * as Cloudflare from "@cloudflare/workers-types/experimental"
 import type * as CloudflareWorkers from "cloudflare:workers"
 import { WorkerEntrypoint } from "cloudflare:workers"
+import { ConfigProvider } from "effect"
 import * as Context from "effect/Context"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
@@ -204,14 +205,14 @@ export interface WorkflowClass<T, A, I> extends WorkerEntrypoint<never> {
 
 export const makeWorkflow = <const Tag, A, I>(
   { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
-  run: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>
+  run: (event: A, env: Env) => Effect.Effect<void, never, Workflow | WorkflowEvent>
 ) => {
-  const ret = class extends WorkerEntrypoint<never> {
+  const ret = class extends WorkerEntrypoint<Env> {
     static _tag = name as Tag
     static _binding = binding
     static _schema = schema
     run(...args: any) {
-      return EffectWorkflowRun(schema, run).apply(null, args)
+      return EffectWorkflowRun(schema, run, this.env).apply(null, args)
     }
   }
 
@@ -220,7 +221,8 @@ export const makeWorkflow = <const Tag, A, I>(
 
 export const EffectWorkflowRun = <A, I>(
   schema: Schema.Schema<A, I>,
-  effect: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>
+  effect: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>,
+  env: Env
 ) => {
   const decode = Schema.decodeUnknown(schema)
 
@@ -324,6 +326,9 @@ export const EffectWorkflowRun = <A, I>(
               Effect.promise(() => step.sleepUntil(name, DateTime.toEpochMillis(timestamp)))
           }))
         ),
+        Effect.provide(Layer.setConfigProvider(
+          ConfigProvider.fromJson(env)
+        )),
         DateTime.withCurrentZone(zone),
         Logger.withMinimumLogLevel(LogLevel.All),
         Effect.catchAllCause(Effect.logError),
