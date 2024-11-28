@@ -90,6 +90,7 @@ export const runMyWorkflow = ({ id, name }: typeof WorkflowParams.Type) =>
         Effect.andThen(Effect.succeed(10))
       )
     )
+
     yield* Effect.log("step1 result", step1Result)
 
     /**
