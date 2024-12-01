@@ -11,5 +11,5 @@
       "@cloudflare/vitest-pool-workers"
     ]
   },
-  "include": ["vitest.config.mts", "test/**/*", "src/env.d.ts"]
+  "include": ["test/**/*", "src/env.d.ts"]
 }

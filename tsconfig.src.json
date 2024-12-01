@@ -9,5 +9,5 @@
     "types": ["@cloudflare/workers-types/experimental"]
   },
   "include": ["worker-configuration.d.ts", "src/**/*"],
-  "exclude": ["test/**/*", "vitest.config.mts"]
+  "exclude": ["test/**/*"]
 }
