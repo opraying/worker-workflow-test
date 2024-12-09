@@ -6,8 +6,7 @@ import { Workflows } from "./workflows"
 
 export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
   Effect.gen(function*() {
-    const workflows = yield* Workflows
-    const myWorkflow = workflows.getWorkflow<WorkflowsBinding>("MyWorkflow")
+    const workflow = yield* Workflows.getWorkflow<WorkflowsBinding>("MyWorkflow")
 
     return handles.handle(
       "index",
@@ -18,7 +17,7 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
           /**
            * Create a workflow with payload, params is typed to the workflow schema and will be encoded to the event
            */
-          const workflow = yield* myWorkflow.create({
+          const workflowInstance = yield* workflow.create({
             params: {
               id,
               name: "Test"
@@ -26,8 +25,8 @@ export const HttpAppLive = HttpApiBuilder.group(MyHttpApi, "app", (handles) =>
           }).pipe(Effect.orDie)
 
           const workflowState = yield* Effect.all({
-            id: workflow.id,
-            status: workflow.status
+            id: workflowInstance.id,
+            status: workflowInstance.status
           })
 
           return { id: workflowState.id, status: workflowState.status }

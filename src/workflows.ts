@@ -121,6 +121,9 @@ const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<key
 export class Workflows extends Effect.Tag("Workflows")<Workflows, ReturnType<typeof make>>() {
   static fromRecord = <T extends Record<string, WorkflowClass<any, any, any>>>(record: LazyArg<T>) =>
     Layer.sync(this, () => make(() => (globalThis as any).env, record()))
+
+  static getWorkflow = <R extends Record<string, WorkflowClass<any, any, any>>>(workflowTag: keyof R) =>
+    Effect.map(this, (_) => _.getWorkflow<R>(workflowTag))
 }
 
 const zone = DateTime.zoneUnsafeMakeNamed("UTC")
@@ -207,7 +210,7 @@ export const makeWorkflow = <const Tag, A, I>(
   { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
   run: (event: A) => Effect.Effect<void, never, Workflow | WorkflowEvent>
 ) => {
-  const ret = class extends WorkerEntrypoint<Env> {
+  const entrypoint = class extends WorkerEntrypoint<never> {
     static _tag = name as Tag
     static _binding = binding
     static _schema = schema
@@ -216,7 +219,7 @@ export const makeWorkflow = <const Tag, A, I>(
     }
   }
 
-  return ret as unknown as WorkflowClass<Tag, A, I>
+  return entrypoint as unknown as WorkflowClass<Tag, A, I>
 }
 
 export const EffectWorkflowRun = <A, I, Env>(
@@ -326,11 +329,7 @@ export const EffectWorkflowRun = <A, I, Env>(
               Effect.promise(() => step.sleepUntil(name, DateTime.toEpochMillis(timestamp)))
           }))
         ),
-        Effect.provide(
-          Layer.setConfigProvider(
-            ConfigProvider.fromJson(env)
-          )
-        ),
+        Effect.provide(Layer.setConfigProvider(ConfigProvider.fromJson(env))),
         DateTime.withCurrentZone(zone),
         Logger.withMinimumLogLevel(LogLevel.All),
         Effect.catchAllCause(Effect.logError),
