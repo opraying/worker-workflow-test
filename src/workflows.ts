@@ -112,7 +112,7 @@ const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<key
     create,
     getWorkflow: <R extends Record<string, WorkflowClass<any, any, any>>>(workflowTag: keyof R) => ({
       get: (id: string) => get(workflowTag as any, id),
-      create: (options?: WorkflowInstanceCreateOptions<R[typeof workflowTag]["_i"]>) =>
+      create: (options?: WorkflowInstanceCreateOptions<R[typeof workflowTag]["_a"]>) =>
         create(workflowTag as any, options)
     })
   }
