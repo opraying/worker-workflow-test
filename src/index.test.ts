@@ -17,7 +17,7 @@ const TestWorkflow = Layer.succeed(
     /**
      * NOTE: This has been omitted here, and serialization and deserialization of parameters and results should also be implemented.
      */
-    fn: (schemaClass, effect, _options) => (...args) => {
+    schema: (schemaClass, effect, _options) => (...args) => {
       return effect(...args) as any
     },
     sleep: (name, duration) => TestClock.sleep(duration),
