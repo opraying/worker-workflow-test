@@ -105,12 +105,14 @@ export const runMyWorkflow = ({ id, name }: typeof WorkflowParams.Type) =>
       "step1",
       pipe(
         Effect.log("step1"),
-        Effect.andThen(Effect.sleep("1 second")),
+        Effect.andThen(Effect.sleep("1 second")), // Effect sleep
         Effect.andThen(Effect.succeed(10))
       )
     )
 
     yield* Effect.log("step1 result", step1Result)
+
+    yield* Workflow.sleep("sleep", "5 seconds") // Workflow sleep
 
     /**
      * Direct use of workflow

@@ -44,3 +44,27 @@ timestamp=2024-12-10T12:00:09.591Z level=ERROR fiber=#7 cause="Error: step3 die 
 timestamp=2024-12-10T12:00:09.592Z level=INFO fiber=#7 message="step 3 default value"
 timestamp=2024-12-10T12:00:09.592Z level=INFO fiber=#7 message="my workflow done"
 ```
+
+# Example
+
+```typescript
+const workflow = Effect.gen(function* () {
+  yield* Workflow.do("step1", Effect.log("hello"))
+
+  yield* Workflow.do("step2", Effect.log("world!"))
+
+  yield* Workflow.sleep("sleep", "8 hours")
+
+  yield* Workflow.do("step3", Effect.log("ship 🚀"), {
+    retries: {
+      limit: 10,
+      delay: "300 millis"
+    }
+  })
+})
+
+// Workflow.do
+// Workflow.schema
+// Workflow.sleep
+// Workflow.sleepUntil
+```
