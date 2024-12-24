@@ -24,7 +24,8 @@ declare global {
   type WorkflowsBinding = typeof workflows
 }
 
-const HttpLive = Layer.mergeAll(HttpAppLive).pipe(
+const HttpLive = HttpApiBuilder.api(MyHttpApi).pipe(
+  Layer.provide([HttpAppLive]),
   Layer.provide(
     Workflows.fromRecord(() => workflows)
   )
@@ -32,9 +33,7 @@ const HttpLive = Layer.mergeAll(HttpAppLive).pipe(
 
 const Live = pipe(
   HttpApiBuilder.Router.Live,
-  Layer.provideMerge(
-    HttpApiBuilder.api(MyHttpApi).pipe(Layer.provide(HttpLive))
-  ),
+  Layer.provideMerge(HttpLive),
   Layer.provideMerge(HttpPlatform.layer),
   Layer.provideMerge(Etag.layerWeak),
   Layer.provideMerge(Path.layer),

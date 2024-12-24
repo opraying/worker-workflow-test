@@ -330,7 +330,6 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                   const cause = exit.cause
 
                   if (Cause.isDieType(cause)) {
-                    // biome-ignore lint/performance/noDelete: <explanation>
                     delete (cause.defect as any).cause
 
                     return Effect.failCause(cause)
@@ -479,7 +478,6 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                   const cause = exit.cause
 
                   if (Cause.isDieType(cause)) {
-                    // biome-ignore lint/performance/noDelete: <explanation>
                     delete (cause.defect as any).cause
 
                     return Effect.failCause(cause)
@@ -516,7 +514,7 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                   console.error("parse exit error", error)
                 }
 
-                if (error && Cause.isCause(error)) {
+                if (Cause.isCause(error)) {
                   return Effect.failCause(error)
                 }
 
