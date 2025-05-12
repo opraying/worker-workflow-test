@@ -1,0 +1,126 @@
+{
+  "languages": {
+    "JSON": {
+      "language_servers": [
+        "eslint",
+        "cspell",
+        "json-language-server",
+        "!biome",
+        "!vtsls",
+        "!typescript-language-server"
+      ],
+      "formatter": "auto",
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "JSONC": {
+      "language_servers": [
+        "eslint",
+        "cspell",
+        "json-language-server",
+        "!biome",
+        "!vtsls",
+        "!typescript-language-server"
+      ],
+      "formatter": "auto",
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "JavaScript": {
+      "language_servers": [
+        "vtsls",
+        "eslint",
+        "cspell",
+        "!biome",
+        "!typescript-language-server"
+      ],
+      "formatter": "auto",
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "TypeScript": {
+      "language_servers": [
+        "vtsls",
+        "eslint",
+        "cspell",
+        "!biome",
+        "!typescript-language-server"
+      ],
+      "formatter": "auto",
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    },
+    "Markdown": {
+      "language_servers": [
+        "eslint",
+        "cspell"
+      ],
+      "formatter": "language_server",
+      "format_on_save": "on",
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      }
+    }
+  },
+  "lsp": {
+    "vtsls": {
+      "experimental": {
+        "completion": {
+          "entriesLimit": 10,
+          "enableServerSideFuzzyMatch": true
+        }
+      },
+      "autoUseWorkspaceTsdk": true,
+      "settings": {
+        "typescript": {
+          "tsserver": {
+            "maxTsServerMemory": 8192,
+            "enableRegionDiagnostics": true
+          },
+          "workspaceSymbols": {
+            "scope": "currentProject"
+          },
+          "preferGoToSourceDefinition": true,
+          "preferences": {
+            "importModuleSpecifier": "non-relative",
+            "autoImportSpecifierExcludeRegexes": [
+              "^node:.*$",
+              "^cloudflare:.*",
+              "^@cloudflare/.*"
+            ]
+          }
+        },
+        "javascript": {
+          "tsserver": {
+            "maxTsServerMemory": 8192
+          }
+        }
+      }
+    },
+    "eslint": {
+      "settings": {
+        "workingDirectory": {
+          "mode": "auto"
+        },
+        "problems": {
+          "shortenToSingleLine": true
+        }
+      }
+    },
+    "tailwindcss-language-server": {
+      "settings": {
+        "tailwindCSS": {
+          "emmetCompletions": true
+        }
+      }
+    }
+  }
+}
