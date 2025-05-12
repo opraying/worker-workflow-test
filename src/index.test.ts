@@ -15,7 +15,8 @@ const TestWorkflow = Layer.succeed(
   Workflow.of({
     do: (name, effect, _options) => effect as any,
     /**
-     * NOTE: This has been omitted here, and serialization and deserialization of parameters and results should also be implemented.
+     * NOTE: This has been omitted here
+     * and serialization and deserialization of parameters and results should also be implemented.
      */
     schema: (schemaClass, effect, _options) => (...args) => {
       return effect(...args) as any

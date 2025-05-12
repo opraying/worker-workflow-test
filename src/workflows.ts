@@ -292,7 +292,8 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
 
                       if (Exit.isFailure(exit)) {
                         /**
-                         * If it is "die", then no exception is thrown; pass this step up to the outer layer to handle the termination.
+                         * If it is "die", then no exception is thrown;
+                         * pass this step up to the outer layer to handle the termination.
                          */
                         if (Cause.isDieType(exit.cause)) {
                           // Workerd unsupoorts Serialization Effect Cause
@@ -436,7 +437,8 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
 
                       if (Exit.isFailure(exit)) {
                         /**
-                         * If it is "die", then no exception is thrown; pass this step up to the outer layer to handle the termination.
+                         * If it is "die", then no exception is thrown;
+                         * pass this step up to the outer layer to handle the termination.
                          */
                         if (Cause.isDieType(exit.cause)) {
                           // Workerd unsupoorts Serialization Effect Cause

@@ -74,7 +74,8 @@ const step2 = Workflow.schema(Step2Request, ({ event: { id, name } }) =>
     }
 
     /**
-     * In `do`, if the return value is not serialized, types like Option cannot work normally and will be handled by Schema here.
+     * In `do`, if the return value is not serialized,
+     * types like Option cannot work normally and will be handled by Schema here.
      */
     return Option.map(name, (name) => `hi ${name}`)
   }), {
