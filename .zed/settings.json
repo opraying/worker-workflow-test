@@ -33,13 +33,7 @@
       }
     },
     "JavaScript": {
-      "language_servers": [
-        "vtsls",
-        "eslint",
-        "cspell",
-        "!biome",
-        "!typescript-language-server"
-      ],
+      "language_servers": ["vtsls", "eslint", "cspell", "!biome", "!typescript-language-server"],
       "formatter": "auto",
       "format_on_save": "on",
       "code_actions_on_format": {
@@ -47,13 +41,7 @@
       }
     },
     "TypeScript": {
-      "language_servers": [
-        "vtsls",
-        "eslint",
-        "cspell",
-        "!biome",
-        "!typescript-language-server"
-      ],
+      "language_servers": ["vtsls", "eslint", "cspell", "!biome", "!typescript-language-server"],
       "formatter": "auto",
       "format_on_save": "on",
       "code_actions_on_format": {
@@ -90,11 +78,7 @@
           "preferGoToSourceDefinition": true,
           "preferences": {
             "importModuleSpecifier": "non-relative",
-            "autoImportSpecifierExcludeRegexes": [
-              "^node:.*$",
-              "^cloudflare:.*",
-              "^@cloudflare/.*"
-            ]
+            "autoImportSpecifierExcludeRegexes": ["^node:.*$", "^cloudflare:.*", "^@cloudflare/.*"]
           }
         },
         "javascript": {
