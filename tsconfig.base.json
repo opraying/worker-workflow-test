@@ -1,29 +1,29 @@
 {
-  "compilerOptions": {
-    "composite": true,
-    "downlevelIteration": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": false,
-    "incremental": true,
-    "outDir": "dist",
-    "baseUrl": ".",
-    "skipLibCheck": true,
-    "skipDefaultLibCheck": true,
-    "moduleResolution": "Bundler",
-    "module": "NodeNext",
-    "forceConsistentCasingInFileNames": true,
-    "allowSyntheticDefaultImports": true,
-    "exactOptionalPropertyTypes": true,
-    "noErrorTruncation": true,
-    "lib": ["ESNext", "DOM"],
-    "sourceMap": true,
-    "strict": true,
-    "strictNullChecks": true,
-    "target": "ESNext",
-    "plugins": [{ "name": "@effect/language-service" }],
-    "types": [],
-    "paths": {
-      "@/*": ["src/*.ts"]
-    }
-  }
+	"compilerOptions": {
+		"composite": true,
+		"downlevelIteration": true,
+		"resolveJsonModule": true,
+		"esModuleInterop": false,
+		"incremental": true,
+		"outDir": "dist",
+		"baseUrl": ".",
+		"skipLibCheck": true,
+		"skipDefaultLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"allowSyntheticDefaultImports": true,
+		"exactOptionalPropertyTypes": true,
+		"noErrorTruncation": true,
+		"moduleResolution": "bundler",
+		"module": "ES2022",
+		"lib": ["ES2022", "DOM"],
+		"target": "ES2022",
+		"sourceMap": true,
+		"strict": true,
+		"strictNullChecks": true,
+		"plugins": [{ "name": "@effect/language-service" }],
+		"types": [],
+		"paths": {
+			"@/*": ["src/*.ts"]
+		}
+	}
 }
