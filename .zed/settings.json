@@ -5,11 +5,12 @@
         "eslint",
         "cspell",
         "json-language-server",
+        "prettier",
         "!biome",
         "!vtsls",
         "!typescript-language-server"
       ],
-      "formatter": "auto",
+      "formatter": "prettier",
       "format_on_save": "on",
       "code_actions_on_format": {
         "source.fixAll.eslint": true
@@ -20,11 +21,12 @@
         "eslint",
         "cspell",
         "json-language-server",
+        "prettier",
         "!biome",
         "!vtsls",
         "!typescript-language-server"
       ],
-      "formatter": "auto",
+      "formatter": "prettier",
       "format_on_save": "on",
       "code_actions_on_format": {
         "source.fixAll.eslint": true
@@ -59,10 +61,7 @@
       }
     },
     "Markdown": {
-      "language_servers": [
-        "eslint",
-        "cspell"
-      ],
+      "language_servers": ["eslint", "cspell"],
       "formatter": "language_server",
       "format_on_save": "on",
       "code_actions_on_format": {
