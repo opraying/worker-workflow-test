@@ -1,10 +1,10 @@
 import type * as Cloudflare from "@cloudflare/workers-types/experimental"
+import * as HttpTraceContext from "@effect/platform/HttpTraceContext"
 import type * as CloudflareWorkers from "cloudflare:workers"
 import { WorkerEntrypoint } from "cloudflare:workers"
 import * as Cause from "effect/Cause"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Context from "effect/Context"
-import * as Data from "effect/Data"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -12,34 +12,58 @@ import * as Exit from "effect/Exit"
 import type { LazyArg } from "effect/Function"
 import { pipe } from "effect/Function"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import type * as ParseResult from "effect/ParseResult"
 import * as Predicate from "effect/Predicate"
 import * as Runtime from "effect/Runtime"
 import * as Schema from "effect/Schema"
 import * as Struct from "effect/Struct"
 
-type WorkflowInstance = {
+export type WorkflowInstance = {
+  /**
+   * Return the id of a Workflow.  */
   readonly id: Effect.Effect<string>
-  readonly pause: Effect.Effect<void>
-  readonly resume: Effect.Effect<void>
-  readonly terminate: Effect.Effect<void>
-  readonly restart: Effect.Effect<void>
+  /**
+   * Return the status of a running Workflow instance.
+   */
   readonly status: Effect.Effect<Cloudflare.InstanceStatus>
+  /**
+   * Pause a running Workflow instance.
+   */
+  readonly pause: Effect.Effect<void>
+  /**
+   * Resume a paused Workflow instance.
+   */
+  readonly resume: Effect.Effect<void>
+  /**
+   * Restart a Workflow instance.
+   */
+  readonly restart: Effect.Effect<void>
+  /**
+   * Terminate a Workflow instance.
+   */
+  readonly terminate: Effect.Effect<void>
+  /**
+   * Send an event to a running Workflow instance.
+   * Return void on success; throws an exception if the Workflow is not running or is an errored state.
+   */
+  readonly sendEvent: (_: { type: string; payload: unknown }) => Effect.Effect<void>
 }
 
 const makeInstance = (instance: Cloudflare.WorkflowInstance): WorkflowInstance => {
   return {
     id: Effect.sync(() => instance.id),
+    status: Effect.promise(() => instance.status()),
     pause: Effect.promise(() => instance.pause()),
     resume: Effect.promise(() => instance.resume()),
-    terminate: Effect.promise(() => instance.terminate()),
     restart: Effect.promise(() => instance.restart()),
-    status: Effect.promise(() => instance.status())
+    terminate: Effect.promise(() => instance.terminate()),
+    sendEvent: (_: { type: string; payload: unknown }) => Effect.promise(() => instance.sendEvent(_))
   }
 }
-
 interface WorkflowInstanceCreateOptions<T = unknown> {
   readonly id?: string | undefined
-  readonly params?: T | undefined
+  readonly params: T | undefined
 }
 
 export interface WorkflowStepConfig {
@@ -72,11 +96,18 @@ const optionsToRetries = (options?: WorkflowStepConfig): CloudflareWorkers.Workf
 }
 
 interface CloudflareWorkflow {
+  /**
+   * @link https://developers.cloudflare.com/workflows/build/workers-api/#get
+   */
   readonly get: (id: string) => Promise<any>
+
+  /**
+   * @link https://developers.cloudflare.com/workflows/build/workers-api/#create
+   */
   readonly create: (options?: WorkflowInstanceCreateOptions) => Promise<any>
 }
 
-const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<keyof T, WorkflowClass<any, any, any>>>(
+const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<keyof T, WorkflowClass<any, any>>>(
   getEnv: LazyArg<T>,
   record: R
 ) => {
@@ -86,47 +117,75 @@ const make = <T extends Record<string, CloudflareWorkflow>, R extends Record<key
 
   const get = (workflowTag: keyof T, id: string) => {
     const workflow = getClass(workflowTag)
-    return Effect.promise(() => getBinding(workflow).get(id)).pipe(Effect.map(makeInstance))
+    return Effect.tryPromise({
+      try: () => getBinding(workflow).get(id),
+      catch: () => new Cause.NoSuchElementException()
+    }).pipe(
+      Effect.map(makeInstance),
+      Effect.asSome,
+      Effect.orElseSucceed(() => Option.none<WorkflowInstance>())
+    )
   }
 
-  const create = <A = unknown>(workflowTag: keyof T, options?: WorkflowInstanceCreateOptions<A>) => {
+  const create = <A = unknown>(workflowTag: keyof T, options: WorkflowInstanceCreateOptions<A>) => {
     const workflow = getClass(workflowTag)
     const encode = Schema.encodeUnknown(workflow._schema)
 
     return pipe(
-      options?.params ? encode(options.params) : Effect.succeed(undefined),
-      Effect.flatMap((params) =>
-        Effect.promise(() =>
-          getBinding(workflow).create({
-            id: options?.id,
-            params
-          })
-        )
+      Effect.all(
+        {
+          params: options.params ? encode(options.params) : Effect.void,
+          headers: Effect.currentSpan.pipe(Effect.map(HttpTraceContext.toHeaders), Effect.optionFromOptional)
+        },
+        { concurrency: "unbounded" }
       ),
-      Effect.map(makeInstance)
+      Effect.andThen(({ headers, params }) =>
+        getBinding(workflow).create({
+          id: options?.id,
+          params: {
+            ...params,
+            __headers: Option.match(headers, {
+              onSome: (headers) => ({
+                b3: headers.b3,
+                traceparent: headers.traceparent
+              }),
+              onNone: () => ({})
+            })
+          }
+        })
+      ),
+      Effect.map(makeInstance),
+      Effect.withSpan(`Workflows.create.${workflowTag.toString()}`, {
+        attributes: {
+          workflowTag,
+          id: options?.id,
+          params: options?.params
+        }
+      }),
+      Effect.orDie
     )
   }
 
   return {
     get,
     create,
-    getWorkflow: <R extends Record<string, WorkflowClass<any, any, any>>>(workflowTag: keyof R) => ({
+    getWorkflow: <R extends Record<string, WorkflowClass<any, any>>>(workflowTag: keyof R) => ({
       get: (id: string) => get(workflowTag as any, id),
-      create: (options?: WorkflowInstanceCreateOptions<R[typeof workflowTag]["_a"]>) =>
+      create: (options: WorkflowInstanceCreateOptions<R[typeof workflowTag]["_a"]>) =>
         create(workflowTag as any, options)
     })
   }
 }
 
 export class Workflows extends Effect.Tag("Workflows")<Workflows, ReturnType<typeof make>>() {
-  static fromRecord = <T extends Record<string, WorkflowClass<any, any, any>>>(record: LazyArg<T>) =>
+  static fromRecord = <T extends Record<string, WorkflowClass<any, any>>>(record: LazyArg<T>) =>
     Layer.sync(this, () => make(() => (globalThis as any).env, record()))
 
-  static getWorkflow = <R extends Record<string, WorkflowClass<any, any, any>>>(workflowTag: keyof R) =>
+  static getWorkflow = <R extends Record<string, WorkflowClass<any, any>>>(workflowTag: keyof R) =>
     Effect.map(this, (_) => _.getWorkflow<R>(workflowTag))
 }
 
-const workerdZone = DateTime.zoneUnsafeMakeNamed("UTC")
+const workerZone = DateTime.zoneUnsafeMakeNamed("UTC")
 
 export class WorkflowEvent extends Context.Tag("@server:workflow-event")<
   WorkflowEvent,
@@ -135,7 +194,7 @@ export class WorkflowEvent extends Context.Tag("@server:workflow-event")<
   static params = <T>(_: T) => this as Context.Tag<WorkflowEvent, CloudflareWorkers.WorkflowEvent<T>>
 }
 
-type DoPaylad<Payload extends Schema.Struct.Fields> = {
+type DoPayload<Payload extends Schema.Struct.Fields> = {
   [k in Exclude<keyof Payload, "_tag">]: Payload[k] extends Schema.Schema.All ? Payload[k]["Type"] : never
 }
 
@@ -168,19 +227,25 @@ export class Workflow extends Context.Tag("@server:workflow")<
       options?: WorkflowStepConfig
     ) => (_: Payload) => Effect.Effect<Success["Type"], Failure["Type"], never>
 
-    readonly sleep: (name: string, duration: Duration.DurationInput) => Effect.Effect<void, never>
+    readonly sleep: (label: string, duration: Duration.DurationInput) => Effect.Effect<void, never>
 
-    readonly sleepUntil: (name: string, timestamp: DateTime.DateTime) => Effect.Effect<void, never>
+    readonly sleepUntil: (label: string, timestamp: DateTime.DateTime) => Effect.Effect<void, never>
+
+    readonly waitForEvent: <T = never>(
+      label: string,
+      options: { type: string; timeout?: Duration.DurationInput | undefined }
+    ) => Effect.Effect<
+      {
+        payload: T
+        timestamp: Date
+        type: string
+      },
+      never
+    >
   }
 >() {
   static do = <A, E = never, R = never>(name: string, effect: Effect.Effect<A, E, R>, options?: WorkflowStepConfig) =>
     Effect.flatMap(Workflow, (workflow) => workflow.do(name, effect, options))
-
-  static sleep = (name: string, duration: Duration.DurationInput) =>
-    Effect.flatMap(Workflow, (workflow) => workflow.sleep(name, duration))
-
-  static sleepUntil = (name: string, timestamp: DateTime.DateTime) =>
-    Effect.flatMap(Workflow, (workflow) => workflow.sleepUntil(name, timestamp))
 
   static schema = <
     Tag extends string,
@@ -190,15 +255,23 @@ export class Workflow extends Context.Tag("@server:workflow")<
     R
   >(
     SchemaClass: Schema.TaggedRequestClass<any, Tag, Payload, Success, Failure>,
-    effect: (payload: DoPaylad<Payload>) => Effect.Effect<Success["Type"], Failure["Type"], R>,
+    effect: (payload: DoPayload<Payload>) => Effect.Effect<Success["Type"], Failure["Type"], R>,
     options?: WorkflowStepConfig
   ) =>
-  (payload: DoPaylad<Payload>) =>
+  (payload: DoPayload<Payload>) =>
     Effect.flatMap(Workflow, (workflow) => workflow.schema(SchemaClass as any, effect, options)(payload))
+
+  static sleep = (label: string, duration: Duration.DurationInput) =>
+    Effect.flatMap(Workflow, (workflow) => workflow.sleep(label, duration))
+
+  static sleepUntil = (label: string, timestamp: DateTime.DateTime) =>
+    Effect.flatMap(Workflow, (workflow) => workflow.sleepUntil(label, timestamp))
+
+  static waitForEvent = <T>(label: string, options: { type: string; timeout?: Duration.DurationInput | undefined }) =>
+    Effect.flatMap(Workflow, (workflow) => workflow.waitForEvent<T>(label, options))
 }
 
-export interface WorkflowClass<T, A, I> extends WorkerEntrypoint<never> {
-  readonly _tag: T
+export interface WorkflowClass<A, I> extends WorkerEntrypoint<never> {
   readonly _a: A
   readonly _i: I
   readonly _schema: Schema.Schema<A, I>
@@ -206,85 +279,102 @@ export interface WorkflowClass<T, A, I> extends WorkerEntrypoint<never> {
   readonly run: (...args: any) => Promise<void>
 }
 
-export const makeWorkflowEntrypoint = <const Tag, A, I, E = never>(
-  { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
-  run: (event: A) => Effect.Effect<void, E, Workflow | WorkflowEvent>
-) => {
-  const entrypoint = class extends WorkerEntrypoint<never> {
-    static _tag = name as Tag
-    static _binding = binding
-    static _schema = schema
-    run(...args: any) {
-      return runEffectWorkflow<A, I, E, unknown>(schema, run, this.env).apply(null, args)
-    }
-  }
-
-  return entrypoint as unknown as WorkflowClass<Tag, A, I>
-}
-
-// fork from Schema.Defect, but keep the stack
-const Defect = Schema.transform(Schema.Unknown, Schema.Unknown, {
-  strict: true,
-  decode: (u) => {
-    if (Predicate.isObject(u) && "message" in u && typeof u.message === "string") {
-      const err = new Error(u.message, { cause: u })
-      if ("name" in u && typeof u.name === "string") {
-        err.name = u.name
-      }
-      err.stack = "stack" in u && typeof u.stack === "string" ? u.stack : ""
-      return err
-    }
-    return String(u)
-  },
-  encode: (defect) => {
-    if (defect instanceof Error) {
-      return {
-        name: defect.name,
-        message: defect.message,
-        stack: defect.stack
-      }
-    }
-    return String(defect)
-  }
-}).annotations({ identifier: "Defect" })
-
-class WorkflowDoError extends Data.TaggedError("WorkflowDoError")<{
-  readonly error: Error
-}> {}
-
 export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
   schema: Schema.Schema<A, I>,
-  effect: (event: A) => Effect.Effect<void, E, Workflow | WorkflowEvent>,
-  env: Env
+  effect: (event: A) => Effect.Effect<void, E, Workflow | WorkflowEvent>
 ) => {
   const decode = Schema.decodeUnknown(schema)
   const DoExitSchema = Schema.Exit({
-    defect: Defect,
-    failure: Schema.Union(Defect, Schema.Any),
+    defect: Schema.Defect,
+    failure: Schema.Union(Schema.Defect, Schema.Any),
     success: Schema.Any
   })
   const encodeDoExit = Schema.encodeUnknownSync(DoExitSchema)
-  const decodeDoExit = Schema.decodeUnknownSync(DoExitSchema)
+  const decodeDoExit = Schema.decodeUnknown(DoExitSchema)
 
-  return (event: CloudflareWorkers.WorkflowEvent<I>, step: CloudflareWorkers.WorkflowStep): Promise<unknown> =>
+  const catchAll = (_: {
+    decode: (input: unknown) => Effect.Effect<Exit.Exit<any, any>, ParseResult.ParseError, never>
+  }) =>
+  (
+    effect: Effect.Effect<any, any>
+  ) =>
+    pipe(
+      effect,
+      Effect.catchAllCause((cause) => {
+        if (cause._tag === "Fail") {
+          const fromError = Effect.sync(() => {
+            if (cause.error instanceof Error) {
+              return cause.error
+            }
+            if (Predicate.isObject(cause.error)) {
+              return cause.error
+            }
+            return JSON.stringify(cause.error)
+          })
+
+          const safeError = cause.error?.message
+            ? Effect.orElse(Effect.try(() => JSON.parse(cause.error.message) as object), () => fromError)
+            : fromError
+
+          return pipe(
+            safeError,
+            Effect.flatMap(_.decode),
+            Effect.orDieWith((cause) => new Error("Failed to parse exit", { cause })),
+            Effect.flatMap(
+              (exit) =>
+                Exit.match(exit, {
+                  onSuccess: () => Effect.dieMessage("Should never happen"),
+                  onFailure: (cause) => Cause.isDieType(cause) ? Effect.die(cause.defect) : Effect.failCause(cause)
+                })
+            )
+          )
+        }
+
+        if (cause._tag === "Die") {
+          return Effect.die(cause.defect)
+        }
+
+        return Effect.die(Cause.squash(cause))
+      }),
+      Effect.flatMap((result) => {
+        // Step do success, but not return anything
+        if (!result) {
+          return Effect.void
+        }
+
+        return pipe(
+          _.decode(result),
+          Effect.orDieWith((cause) => new Error("Failed to parse exit", { cause })),
+          Effect.flatMap((exit) =>
+            Exit.match(exit, {
+              onSuccess: (value) => Effect.succeed(value),
+              onFailure: (cause) => Cause.isDieType(cause) ? Effect.die(cause.defect) : Effect.failCause(cause)
+            })
+          )
+        )
+      })
+    )
+
+  return (
+    env: Env,
+    event: CloudflareWorkers.WorkflowEvent<I>,
+    step: CloudflareWorkers.WorkflowStep
+  ): Promise<unknown> =>
     pipe(
       decode(event.payload),
       Effect.flatMap((payload) => effect(payload)),
       Effect.provide(
         Layer.sync(Workflow, () => ({
-          sleep: (name, duration) => Effect.promise(() => step.sleep(name, Duration.toMillis(duration))),
-          sleepUntil: (name, timestamp) =>
-            Effect.promise(() => step.sleepUntil(name, DateTime.toEpochMillis(timestamp))),
           do: (name, callback, options) => {
             const run = pipe(
               Effect.runtime<never>(),
               Effect.andThen((runtime) =>
                 Effect.tryPromise({
                   try: (signal) => {
-                    const run = Runtime.runPromiseExit(runtime)
+                    const runExit = Runtime.runPromiseExit(runtime)
 
                     return step.do(name, optionsToRetries(options), async () => {
-                      const exit = (await run(callback as Effect.Effect<any, any>, { signal })) as Exit.Exit<any>
+                      const exit = (await runExit(callback as Effect.Effect<any, any>, { signal })) as Exit.Exit<any>
 
                       if (Exit.isSuccess(exit)) {
                         return encodeDoExit(exit)
@@ -296,7 +386,7 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                          * pass this step up to the outer layer to handle the termination.
                          */
                         if (Cause.isDieType(exit.cause)) {
-                          // Workerd unsupoorts Serialization Effect Cause
+                          // Worker unsupported Serialization Effect Cause
                           // Covert to plain error message, not Effect Cause
                           return encodeDoExit(exit)
                         }
@@ -309,76 +399,10 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                       }
                     })
                   },
-                  catch: (error) =>
-                    new WorkflowDoError({
-                      error: error as Error
-                    })
+                  catch: (error) => error as any
                 })
               ),
-              Effect.flatMap((result) => {
-                // Step do success, but not return anything
-                if (!result || typeof result === "undefined") {
-                  return Effect.void
-                }
-
-                const exit = decodeDoExit(result)
-
-                if (Exit.isSuccess(exit)) {
-                  return Effect.succeed(exit.value)
-                }
-
-                if (Exit.isFailure(exit)) {
-                  const cause = exit.cause
-
-                  if (Cause.isDieType(cause)) {
-                    delete (cause.defect as any).cause
-
-                    return Effect.failCause(cause)
-                  }
-
-                  return Effect.failCause(cause)
-                }
-
-                return Effect.void
-              }),
-              Effect.catchTag("WorkflowDoError", ({ error }) => {
-                // TOOD: Unexpected error, just ignore it
-                if (!error) return Effect.void
-
-                try {
-                  // Try to parse error message to Exit
-                  const exit = decodeDoExit(JSON.parse(error.message))
-
-                  if (Exit.isFailure(exit)) {
-                    const cause = exit.cause
-
-                    if (Cause.isFailType(cause)) {
-                      // To make it more compatible with the structure of Cause, for more attractive logs
-                      const err = new Error(cause.error.message)
-                      err.name = cause.error._tag || cause.error.name || "Error"
-                      err.stack = cause.error.stack || ""
-
-                      return Effect.failCause(Cause.fail(err as any))
-                    }
-
-                    return Effect.failCause(cause)
-                  }
-                } catch (error) {
-                  console.error("parse exit error", error)
-                }
-
-                if (Cause.isCause(error)) {
-                  return Effect.failCause(error)
-                }
-
-                if (error instanceof Error) {
-                  return Effect.fail(error)
-                }
-
-                return Effect.fail(new Error(String(error)))
-              }),
-              Effect.catchAllCause((_) => Effect.die(Cause.isDieType(_) ? _.defect : _)),
-              Effect.tapErrorCause(Effect.logError)
+              catchAll({ decode: decodeDoExit })
             )
 
             return run as any
@@ -400,8 +424,8 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
             const isAllowEmpty = successSchema.ast._tag === "VoidKeyword"
 
             const ExitSchema = Schema.Exit({
-              defect: Defect,
-              failure: Schema.Union(Defect, failureSchema),
+              defect: Schema.Defect,
+              failure: Schema.Union(Schema.Defect, failureSchema),
               success: Schema.transform(successSchema, Schema.Any, {
                 decode: (fa) => {
                   return fa
@@ -413,7 +437,7 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
               })
             })
             const encodeExit = Schema.encodeUnknownSync(ExitSchema)
-            const decodeExit = Schema.decodeUnknownSync(ExitSchema)
+            const decodeExit = Schema.decodeUnknown(ExitSchema)
 
             const run = pipe(
               Effect.runtime<never>(),
@@ -441,7 +465,7 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                          * pass this step up to the outer layer to handle the termination.
                          */
                         if (Cause.isDieType(exit.cause)) {
-                          // Workerd unsupoorts Serialization Effect Cause
+                          // Worker unsupported Serialization Effect Cause
                           // Covert to plain error message, not Effect Cause
                           try {
                             return encodeExit(exit)
@@ -458,85 +482,50 @@ export const runEffectWorkflow = <A, I, E = never, Env = unknown>(
                       }
                     })
                   },
-                  catch: (error) =>
-                    new WorkflowDoError({
-                      error: error as Error
-                    })
+                  catch: (error) => error as any
                 })
               ),
-              Effect.flatMap((result) => {
-                // Step do success, but not return anything
-                if (!result || typeof result === "undefined") {
-                  return Effect.void
-                }
-
-                const exit = decodeExit(result)
-
-                if (Exit.isSuccess(exit)) {
-                  return Effect.succeed(exit.value)
-                }
-
-                if (Exit.isFailure(exit)) {
-                  const cause = exit.cause
-
-                  if (Cause.isDieType(cause)) {
-                    delete (cause.defect as any).cause
-
-                    return Effect.failCause(cause)
-                  }
-
-                  return Effect.failCause(cause)
-                }
-
-                return Effect.void
-              }),
-              Effect.catchTag("WorkflowDoError", ({ error }) => {
-                // TOOD: Unexpected error, just ignore it
-                if (!error) return Effect.void
-
-                try {
-                  // Try to parse error message to Exit
-                  const exit = decodeExit(JSON.parse(error.message))
-
-                  if (Exit.isFailure(exit)) {
-                    const cause = exit.cause
-
-                    if (Cause.isFailType(cause)) {
-                      // To make it more compatible with the structure of Cause, for more attractive logs
-                      const err = new Error(cause.error.message)
-                      err.name = cause.error._tag || cause.error.name || "Error"
-                      err.stack = cause.error.stack || ""
-
-                      return Effect.failCause(Cause.fail(err as any))
-                    }
-
-                    return Effect.failCause(cause)
-                  }
-                } catch (error) {
-                  console.error("parse exit error", error)
-                }
-
-                if (Cause.isCause(error)) {
-                  return Effect.failCause(error)
-                }
-
-                if (error instanceof Error) {
-                  return Effect.fail(error)
-                }
-
-                return Effect.fail(new Error(String(error)))
-              }),
-              Effect.catchAllCause((_) => Effect.die(Cause.isDieType(_) ? _.defect : _)),
-              Effect.tapErrorCause(Effect.logError)
+              catchAll({ decode: decodeExit })
             )
 
             return run as any
-          }
+          },
+          sleep: (label, duration) =>
+            Effect.promise(() => step.sleep(label, Duration.toMillis(duration))).pipe(
+              Effect.withSpan("Workflows.sleep", { attributes: { label, duration } })
+            ),
+          sleepUntil: (label, timestamp) =>
+            Effect.promise(() => step.sleepUntil(label, DateTime.toEpochMillis(timestamp))).pipe(
+              Effect.withSpan("Workflows.sleepUntil", { attributes: { label, timestamp } })
+            ),
+          waitForEvent: (label, options) =>
+            Effect.promise(() =>
+              step.waitForEvent<any>(label, {
+                type: options.type,
+                timeout: Duration.toMillis(options.timeout ?? Duration.days(1))
+              })
+            )
         }))
       ),
       Effect.provide(Layer.succeed(WorkflowEvent, event)),
       Effect.provide(Layer.setConfigProvider(ConfigProvider.fromJson(env))),
-      DateTime.withCurrentZone(workerdZone),
+      DateTime.withCurrentZone(workerZone),
       Effect.runPromise
     )
+}
+
+export const makeWorkflowEntrypoint = <const Tag, A, I, E = never>(
+  { binding, name, schema }: { name: Tag; binding: string; schema: Schema.Schema<A, I> },
+  run: (event: A) => Effect.Effect<void, E, Workflow | WorkflowEvent>
+) => {
+  const entrypoint = class extends WorkerEntrypoint<never> {
+    static _tag = name as Tag
+    static _binding = binding
+    static _schema = schema
+    run(...args: [event: CloudflareWorkers.WorkflowEvent<I>, step: CloudflareWorkers.WorkflowStep]) {
+      return runEffectWorkflow<A, I, E>(schema, run).apply(null, [this.env, ...args])
+    }
+  }
+
+  return entrypoint as unknown as WorkflowClass<A, I>
 }
